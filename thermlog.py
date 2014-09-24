@@ -6,36 +6,30 @@ import time
 import datetime
 import sqlite3
 
+
 #--------------------#
 # Database functions #
 #--------------------#
 conn = sqlite3.connect('tempreadings.db')
 c = conn.cursor()
 
-
 def create_tempstore_table():
-    c.execute('CREATE TABLE IF NOT EXISTS tempstore (datestamp text, reading real)'
-              )
+    c.execute('CREATE TABLE IF NOT EXISTS tempstore (datestamp text, reading real)')
+    conn.commit()
+
+def create_log_table():
+    c.execute('CREATE TABLE IF NOT EXISTS log (datestamp text, avg real, min real, max real)')
     conn.commit()
 
 def put_data_temporary(datestamp, value):
     c.execute('INSERT INTO tempstore VALUES (?,?)', [datestamp, value])
     conn.commit()
 
-# Currently unused, written for future version of script
-# which stores min, max, and average temps over a period of time
-def create_log_table():
-    c.execute('CREATE TABLE IF NOT EXISTS log (datestamp text, avg real, min real, max real, mode real)'
-              )
+def dump_to_log():
+    c.execute('INSERT INTO log (datestamp, avg, min, max) SELECT ?, avg(reading), min(reading), max(reading) FROM tempstore', [datetime.datetime.now()])
+    c.execute('DELETE FROM tempstore')
     conn.commit()
 
-def put_data_log(avg, min, max, mode):
-    c.execute('INSERT INTO log VALUES (?,?,?,?,?)', [datetime.datetime,
-              avg, min, max, mode])
-    conn.commit()
-
-def dumpstorage():
-    c.execute('SELECT * FROM tempstore')
 
 #------------#
 # Probe init #
@@ -47,6 +41,7 @@ time.sleep(2)
 base_dir = '/sys/bus/w1/devices/'
 device_folder = glob.glob(base_dir + '10*')[0]
 device_file = device_folder + '/w1_slave'
+
 
 #---------------#
 # Probe reading #
@@ -75,9 +70,18 @@ def read_temp():
 #-------------#
 # Store temps #
 #-------------#
+create_log_table()
+create_tempstore_table()
+counter = 0
 while True:
-    create_log_table()
-    create_tempstore_table()
-    put_data_temporary(datetime.datetime.now(), read_temp())
-    print('TEMP(f):',read_temp())
+    
+    # Logs every 30 seconds for an hour then dumps avg, min, max to the main log table
+    if (counter < 120):
+        # put_data_temporary(datetime.datetime.now(), input("enter temp"))   #-# Used in testing without Pi
+        put_data_temporary(datetime.datetime.now(), read_temp())
+        counter += 1
+    else:
+        dump_to_log()
+        counter = 0
     time.sleep(30)
+    
